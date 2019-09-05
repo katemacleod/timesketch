@@ -386,6 +386,12 @@ class SketchResource(ResourceMixin, Resource):
                 'name': searchtemplate.name,
                 'id': searchtemplate.id
             } for searchtemplate in SearchTemplate.query.all()],
+            sessions=[{
+                'session_type': session.session_type,
+                'session_id': session.session_id,
+                'start_timestamp': int(session.start_timestamp),
+                'end_timestamp': int(session.end_timestamp)
+            } for session in sketch.get_sessions],
             emojis=get_emojis_as_dict(),
             permissions={
                 'read': bool(sketch.has_permission(current_user, 'read')),

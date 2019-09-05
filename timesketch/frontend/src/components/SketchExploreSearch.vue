@@ -78,6 +78,16 @@ limitations under the License.
     </section>
 
     <section class="section">
+        <div class="container is-fluid">
+            <div class="card">
+                <div class="card-content">
+                  <ts-explore-session-chart></ts-explore-session-chart>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <section class="section">
       <div class="container is-fluid">
         <div class="card">
           <div class="card-content">
@@ -99,6 +109,7 @@ import TsCreateViewForm from './SketchCreateViewForm'
 import TsSketchExploreEventList from './SketchExploreEventList'
 import TsExploreTimelinePicker from './SketchExploreTimelinePicker'
 import TsExploreFilterTime from './SketchExploreFilterTime'
+import TsExploreSessionChart from './SketchExploreSessionChart'
 
 export default {
   name: 'ts-sketch-explore-search',
@@ -107,7 +118,8 @@ export default {
     TsCreateViewForm,
     TsSketchExploreEventList,
     TsExploreTimelinePicker,
-    TsExploreFilterTime
+    TsExploreFilterTime,
+    TsExploreSessionChart
   },
   props: ['sketchId'],
   data () {
