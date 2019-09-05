@@ -28,8 +28,6 @@
                 </div>
             </div>
         </div>
-
-        <button v-if="selectedID !== ''" class="button" @click="showSession">Show Session</button>
    </div>
 </template>
 
@@ -53,7 +51,8 @@ export default {
             barSize: 0,
             smallestTimestamp: 0,
             selectedType: '',
-            selectedID: ''
+            selectedID: '',
+            prevQueryString: ''
       }
   },
 
@@ -80,6 +79,9 @@ export default {
             this.sessionTypes = ['all']
             this.selectedType = ''
             this.selectedID = ''
+
+        this.$store.commit('updateCurrentQueryString', this.prevQueryString)
+        this.$store.commit('search', this.sketch.id)
         }
     },
 
@@ -121,17 +123,12 @@ export default {
         this.spec = JSON.stringify(dictSpec)
 
         this.$store.commit('updateCurrentQueryString', queryString)
-    },
-
-    showSession: function () {
         this.$store.commit('search', this.sketch.id)
-        this.toggleChart()
     },
 
     getRoundedSessions: function () {
         //increases the visibility of sessions when plotted
         var roundedSessions = JSON.parse(JSON.stringify(this.sessions))
-        console.log(roundedSessions)
         var smallestTimestamp = roundedSessions[0].start_timestamp
         var largest_timestamp = roundedSessions[0].end_timestamp
         for (var i = 1; i < roundedSessions.length; i++) {
@@ -174,6 +171,7 @@ export default {
     },
 
     getVegaSpec: function () {
+        this.prevQueryString = this.$store.state.currentQueryString
         this.getRoundedSessions()
         var dictSpec = { "$schema": "https://vega.github.io/schema/vega-lite/v3.json",
             "data": {
