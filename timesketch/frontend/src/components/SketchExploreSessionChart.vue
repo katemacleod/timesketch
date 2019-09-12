@@ -1,8 +1,22 @@
 <template>
     <div>
-        <ts-vega-lite-chart :vegaSpec="spec"></ts-vega-lite-chart>
+        <div v-if="this.spec === '{}' && this.showChart === true"><span class="icon"><i class="fas fa-circle-notch fa-pulse"></i></span> Loading..</div>
+        <ts-vega-lite-chart :vegaSpec="spec" @viewCreated="registerClickListener"></ts-vega-lite-chart>
         <div class="field">
-            <button class="button" @click="toggleChart" :disabled="sessions.length === 0 && showChart === false">{{message}}</button>
+            <button class="button" @click="toggleChart" :disabled="indices.length > 1">{{message}}</button>
+        </div>
+
+        <div class="field" v-if="showChart">
+            <p v-if="!this.showTimeRange">
+                Showing sessions within the last year of the timeline by default. <u><em @click="toggleTimeRange">Choose a different timeframe.</em></u>
+            </p>
+            <div v-if="this.showTimeRange" class="control">
+                <label class="label"><em>Start date:</em></label>
+                <input class="input" type="text" name="start_time_range_input" placeholder="mm/dd/yyyy" @change="updateTimeRange">
+                <label class="label"><em>End date:</em></label>
+                <input class="input" type="text" name="end_time_range_input" placeholder="mm/dd/yyyy" @change="updateTimeRange">
+            </div>
+            <p>{{timeRangeMessage}}</p>
         </div>
 
         <div class="field" v-if="showChart">
@@ -33,6 +47,7 @@
 
 <script>
 import TsVegaLiteChart from './VegaLiteChart'
+import ApiClient from '../utils/RestApiClient'
 
 export default {
   name: 'ts-explore-session-chart',
@@ -45,6 +60,7 @@ export default {
             roundedSessions: [],
             message: 'Show Session Chart',
             showChart: false,
+            showTimeRange: false,
             selectedSessions: [],
             spec: '{}',
             sessionTypes: ['all'],
@@ -52,7 +68,10 @@ export default {
             smallestTimestamp: 0,
             selectedType: '',
             selectedID: '',
-            prevQueryString: ''
+            sessions: [],
+            startTimeRange: Date.now() - 31556952000,
+            endTimeRange: Date.now(),
+            timeRangeMessage: ''
       }
   },
 
@@ -60,28 +79,74 @@ export default {
     sketch () {
         return this.$store.state.sketch
     },
-    sessions () {
-        return this.$store.state.meta.sessions
+    indices () {
+        return this.$store.state.currentQueryFilter.indices
     }
   },
 
   methods: {
+    registerClickListener: function (view) {
+        var store = this.$store
+        var sketchId = this.sketch.id
+        view.addEventListener('click', function (event, item) {
+            var session_type = item.datum.session_type
+            var session_id = item.datum.session_id
+            if (session_type != undefined && session_id != undefined) {
+                var queryString = 'session_id.' + session_type + ':' + session_id
+                store.commit('updateCurrentQueryString', queryString)
+                store.commit('search', sketchId)
+            }
+        })
+    },
+
     toggleChart: function () {
         this.showChart = !this.showChart
         if (this.showChart) {
             this.message = 'Hide Session Chart'
-            this.getVegaSpec()
+            if (this.sessions.length == 0) {
+                ApiClient.getSessions(this.sketch.id, this.indices[0]).then((response) => {
+                    this.sessions = response.data
+                    this.sessionTypes = this.sessionTypes.concat([...new Set(this.sessions.map(s => s.session_type))])
+                    this.getVegaSpec()
+                }).catch((e) => {})
+            }
+            else {
+                this.getVegaSpec()
+            }
         }
         else {
             this.message = 'Show Session Chart'
             this.selectedSessions = []
             this.spec = '{}'
-            this.sessionTypes = ['all']
             this.selectedType = ''
             this.selectedID = ''
+            this.showTimeRange = false
+            this.startTimeRange  = Date.now() - 31556952000,
+            this.endTimeRange = Date.now(),
+            this.timeRangeMessage = ''
+        }
+    },
 
-        this.$store.commit('updateCurrentQueryString', this.prevQueryString)
-        this.$store.commit('search', this.sketch.id)
+    toggleTimeRange: function () {
+        this.showTimeRange = !this.showTimeRange
+    },
+    
+    updateTimeRange: function (event) {
+        if(/\d{1,2}\/\d{1,2}\/\d{4}/.test(event.target.value)) {
+            this.timeRangeMessage = ''
+            this.selectedSessions = []
+            this.selectedType = ''
+            this.selectedID = ''
+            if (event.target.name === "start_time_range_input") {
+                this.startTimeRange = new Date(event.target.value).getTime()
+            }
+            else {
+                this.endTimeRange = new Date(event.target.value).getTime()
+            }
+            this.getVegaSpec()
+        }
+        else {
+            this.timeRangeMessage = 'Please enter a valid date.'
         }
     },
 
@@ -126,44 +191,33 @@ export default {
         this.$store.commit('search', this.sketch.id)
     },
 
-    getRoundedSessions: function () {
+    getRoundedSessions: function (first_timestamp, last_timestamp) {
         //increases the visibility of sessions when plotted
         var roundedSessions = JSON.parse(JSON.stringify(this.sessions))
-        var smallestTimestamp = roundedSessions[0].start_timestamp
-        var largest_timestamp = roundedSessions[0].end_timestamp
-        for (var i = 1; i < roundedSessions.length; i++) {
-            if (roundedSessions[i].start_timestamp < smallestTimestamp) {
-                smallestTimestamp = roundedSessions[i].start_timestamp
-            }
-            if (roundedSessions[i].end_timestamp > largest_timestamp) {
-                largest_timestamp = roundedSessions[i].end_timestamp
-            }
-        }
-        var timeRange = (largest_timestamp - smallestTimestamp)
+        roundedSessions = roundedSessions.filter(session => session.start_timestamp >= first_timestamp && session.start_timestamp <= last_timestamp);
 
-        //session bars will take up 1/1000th of the chart if they would otherwise be smaller
-        this.barSize = Math.round(timeRange / 1000)
-        this.smallestTimestamp = smallestTimestamp
-
-        for (var i = 0; i < roundedSessions.length; i++) {
-            var session = roundedSessions[i]
-            var extended_end = session.start_timestamp + this.barSize
-            if (session.end_timestamp < extended_end) {
-                session.end_timestamp = extended_end
-            }
-
-            //do not display sessions as overlapping if they are not actually
-            if (i !== 0 &&
-                roundedSessions[i - 1].session_type === session.session_type &&
-                roundedSessions[i - 1].end_timestamp > session.start_timestamp &&
-                roundedSessions[i - 1].start_timestamp !== session.start_timestamp) {
-
-                var real_end = this.sessions[i-1].end_timestamp
-                if (real_end <= session.start_timestamp) {
-                    roundedSessions[i - 1].end_timestamp = session.start_timestamp
+        if (roundedSessions.length > 0) {
+            var smallestTimestamp = roundedSessions[0].start_timestamp
+            var largest_timestamp = roundedSessions[0].end_timestamp
+            for (var i = 1; i < roundedSessions.length; i++) {
+                if (roundedSessions[i].start_timestamp < smallestTimestamp) {
+                    smallestTimestamp = roundedSessions[i].start_timestamp
                 }
-                else {
-                    roundedSessions[i - 1].end_timestamp = real_end
+                if (roundedSessions[i].end_timestamp > largest_timestamp) {
+                    largest_timestamp = roundedSessions[i].end_timestamp
+                }
+            }
+            var timeRange = (largest_timestamp - smallestTimestamp)
+
+            //session bars will take up 1/1000th of the chart if they would otherwise be smaller
+            this.barSize = Math.round(timeRange / 1000)
+            this.smallestTimestamp = smallestTimestamp
+
+            for (var i = 0; i < roundedSessions.length; i++) {
+                var session = roundedSessions[i]
+                var extended_end = session.start_timestamp + this.barSize
+                if (session.end_timestamp < extended_end) {
+                    session.end_timestamp = extended_end
                 }
             }
         }
@@ -171,8 +225,11 @@ export default {
     },
 
     getVegaSpec: function () {
-        this.prevQueryString = this.$store.state.currentQueryString
-        this.getRoundedSessions()
+        this.getRoundedSessions(this.startTimeRange, this.endTimeRange)
+        if (this.roundedSessions === undefined || this.roundedSessions.length == 0) {
+            this.timeRangeMessage = 'There are no sessions in this time range.'
+        }
+
         var dictSpec = { "$schema": "https://vega.github.io/schema/vega-lite/v3.json",
             "data": {
                 "values": this.roundedSessions
@@ -186,8 +243,8 @@ export default {
 
                 "encoding": {
                     "y": {"field": "session_type", "type": "ordinal", "axis": {"title": "Session Type"}},
-                    "x": {"field": "start_timestamp", "type": "quantitative", "axis": {"title": "Timestamp", "tickCount": 5}, "scale": {"domain": {"selection": "brush"}}},
-                    "x2": {"field":"end_timestamp"},
+                    "x": {"field": "start_timestamp", "type": "temporal", "timeUnit": "yearmonthdatehoursminutes", "axis": {"title": "Timestamp", "tickCount": 5}, "scale": {"domain": {"selection": "brush"}}},
+                    "x2": {"field":"end_timestamp", "type": "temporal", "timeUnit": "yearmonthdatehoursminutes", "axis": {"title": "End Timestamp"}},
                     "color": {
                         "field": "session_id", "type": "nominal",
                         "scale": {"scheme": "tableau20"},
@@ -218,7 +275,7 @@ export default {
 
                 "encoding": {
                     "y": {"field": "session_type", "type": "ordinal", "axis": {"title": "Session Type"}},
-                    "x": {"field": "start_timestamp", "type": "quantitative", "axis": {"title": "Timestamp", "tickCount": 5}, "scale": { "zero": false}},
+                    "x": {"field": "start_timestamp", "type": "temporal", "axis": {"title": "Timestamp", "tickCount": 5}},
                     "color": {
                         "field": "session_id", "type": "nominal",
                         "scale": {"scheme": "tableau20"},
@@ -234,7 +291,6 @@ export default {
                 }
             }]
         }
-        this.sessionTypes = this.sessionTypes.concat([...new Set(this.sessions.map(s => s.session_type))])
         this.spec = JSON.stringify(dictSpec)
     }
   }
