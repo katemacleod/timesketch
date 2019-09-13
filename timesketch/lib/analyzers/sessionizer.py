@@ -15,7 +15,7 @@ class SessionizerSketchPlugin(interface.BaseSketchAnalyzer):
     # TODO max_time_diff_micros should be configurable
     max_time_diff_micros = 300000000
     query = '*'
-    session_type = 'all_events_session'
+    session_type = 'all_events'
 
     def run(self):
         """Entry point for the analyzer. Allocates each event a session_id
@@ -61,7 +61,7 @@ class SessionizerSketchPlugin(interface.BaseSketchAnalyzer):
                 ' {0:d}'.format(session_num))
 
     def annotateEvent(self, event, session_num):
-        event.add_attributes({self.session_type: str(session_num)})
+        event.add_attributes({'session_id': {self.session_type: str(session_num)}})
         event.commit()
 
 manager.AnalysisManager.register_analyzer(SessionizerSketchPlugin)
